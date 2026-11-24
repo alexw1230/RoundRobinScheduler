@@ -323,7 +323,53 @@ int main()
         * Repeat run_one_step() until all processes finish. Please handle memory allocation/deallocation properly so there's no leak
         */
 
-        
+        int i;
+
+        // 1. remove the process on each core if it finished or used up its quantum
+        //    (remove_proc frees a finished process, or puts it at the back of the round robin queue)
+        for (i = 0; i < 4; i++) {
+            if (computer.cores[i].busy) {
+                if (computer.cores[i].p->service_time <= 0 || computer.cores[i].proc_time >= quantum) {
+                    remove_proc(i);
+                }
+            }
+        }
+
+        // 2. move every process whose arrival time has come from the pending queue to the round robin queue.
+        //    a process arriving at time t runs during the step that brings the computer to time t,
+        //    so check against computer.time + 1. the node is relinked, not freed and re-allocated
+        while (pending_head != NULL && pending_head->p->arrival_time <= computer.time + 1) {
+            struct node* n = pending_head;
+            pending_head = pending_head->next;
+            if (pending_head == NULL) {
+                pending_tail = NULL;
+            }
+            n->next = NULL;
+
+            printf("Process %s arrived at time %d\n", n->p->process_ID, n->p->arrival_time);
+
+            if (tail == NULL) {
+                head = tail = n;
+            } else {
+                tail->next = n;
+                tail = n;
+            }
+            proc_num++;
+        }
+
+        // 3. fill each idle core with the process at the head of the round robin queue, then free its node
+        for (i = 0; i < 4; i++) {
+            if (computer.cores[i].busy == 0 && head != NULL) {
+                struct node* n = head;
+                head = head->next;
+                if (head == NULL) {
+                    tail = NULL; // remove_proc relies on tail == NULL meaning the queue is empty
+                }
+                sched_proc(n->p, i);
+                free(n);
+            }
+        }
+
         // Check for completion of all processes
         if (pending_head == NULL && 
             head == NULL && 
